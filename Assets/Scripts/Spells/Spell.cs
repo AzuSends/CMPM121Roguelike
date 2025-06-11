@@ -12,7 +12,6 @@ public class Spell
 
     public string name;
     public string description;
-    public int energy;
     public int icon;
     public string N;
     public float spray;
@@ -182,6 +181,7 @@ public class Spell
                 }
             }
 
+            Debug.Log("Seen KB: " + this.knockback);
             var rb = other.owner.GetComponent<EnemyController>();
             if (rb != null)
             {
@@ -258,6 +258,10 @@ public class ModifierSpell : Spell
     private float delay;
     private float splitSpread;
 
+    public float stunDuration = 0f;
+    public float vulnerabilityMultiplier = 1f;
+    public float missChance = 0f;
+
     public ModifierSpell(Spell inner)
     {
         this.innerSpell = inner;
@@ -321,6 +325,11 @@ public class ModifierSpell : Spell
 
     }
 
+    public void AddStunEffect(float duration) => this.stunDuration = duration;
+    public void AddVulnerabilityEffect(float multiplier, float duration) => this.vulnerabilityMultiplier = multiplier;
+    public void AddMissChanceEffect(float chance, float duration) => this.missChance = chance;
+
+
 
     public override int GetDamage()
     {
@@ -359,7 +368,6 @@ public class ModifierSpell : Spell
     public override IEnumerator Cast(Vector3 where, Vector3 target, Hittable.Team team, int cast = 0, float projDelay = 0.0f, float splitSpread = 0.0f)
     {
         this.AssignOwner(this.owner);
-
         innerSpell.damageFull = new Damage(this.rpn.RPN_to_int(innerSpell.damage.amount), innerSpell.damage.type);
         innerSpell.GetDamageObj().amount = this.GetDamage();
 
@@ -373,6 +381,40 @@ public class ModifierSpell : Spell
         // Ensure inner spell has the same owner and RPN context
         innerSpell.AssignOwner(owner);
         this.team = team;
+
+void WrappedOnHit(Hittable other, Vector3 impact)
+{
+
+    if (other.team != team)
+    {
+        var ec = other.owner.GetComponent<EnemyController>();
+        if (ec != null)
+        {
+
+            if (stunDuration > 0)
+            {
+                ec.StartCoroutine(ApplyStun(ec, stunDuration));
+            }
+
+            if (vulnerabilityMultiplier > 1f)
+            {
+                ec.ApplyVulnerability(vulnerabilityMultiplier, 5f);
+            }
+
+            if (missChance > 0)
+            {
+                ec.ApplyInaccuracy(missChance, 5f);
+            }
+        }
+    }
+
+    innerSpell.OnHit(other, impact);
+}
+
+
+
+
+        GameManager.Instance.projectileManager.CreateProjectile(0, innerSpell.projectile.trajectory, where, target - where, GetSpeed(), WrappedOnHit);
 
         //Updates inner spell's damage object
 
@@ -393,6 +435,16 @@ public class ModifierSpell : Spell
 
         this.last_cast = Time.time;
         yield return new WaitForEndOfFrame();
+    }
+
+    private IEnumerator ApplyStun(EnemyController enemy, float duration)
+    {
+        if (enemy != null)
+        {
+            enemy.isStunned = true;
+            yield return new WaitForSeconds(duration);
+            enemy.isStunned = false;
+        }
     }
 }
 public class ArcaneBolt : Spell
@@ -625,7 +677,7 @@ public class ChainingLightningSpell : Spell
         GameObject current = firstTarget;
         if (firstTarget != null)
         {
-            GameManager.Instance.projectileManager.CreateProjectile(0, projectile.trajectory, where, target - where, this.rpn.RPN_to_float(projectile.speed), this.OnHit);
+            GameManager.Instance.projectileManager.CreateProjectile(0, projectile.trajectory, where, target-where, this.rpn.RPN_to_float(projectile.speed), this.OnHit);
             //yield return ChainHit(firstTarget, maxJumps);
         }
         yield return new WaitForEndOfFrame();
@@ -669,9 +721,8 @@ public class ChainingLightningSpell : Spell
     // }
     override public void OnHit(Hittable other, Vector3 impact)
     {
-
-        if (jumpsLeft <= 0)
-        {
+        
+        if (jumpsLeft <= 0) {
             return;
         }
         Debug.Log(jumpsLeft + " JumpsLeft");
@@ -700,10 +751,10 @@ public class ChainingLightningSpell : Spell
             GameManager.Instance.projectileManager.CreateProjectile(0, projectile.trajectory, current.transform.position, nextTarget.transform.position, this.rpn.RPN_to_float(projectile.speed), this.OnHit);
             jumpsLeft--;
             current = nextTarget;
-
+            
             //yield return ChainHit(nextTarget, jumpsLeft - 1);
         }
-
+        
     }
 
     ChainingLightningSpell() : base()
@@ -734,8 +785,8 @@ public class FireballSpell : Spell
         location = where;
         //float radius = 5f;
         GameManager.Instance.projectileManager.CreateProjectile(0, projectile.trajectory, where, target - where, this.rpn.RPN_to_float(projectile.speed), this.OnHit);
-
-
+        
+        
 
         yield return new WaitForEndOfFrame();
     }
@@ -744,8 +795,8 @@ public class FireballSpell : Spell
     {
         var enemies = new List<GameObject>(GameManager.Instance.GetAllEnemies());
         foreach (var enemy in enemies)
-        {
-
+        {   
+            
             float dist = Vector3.Distance(location, enemy.transform.position);
             if (dist <= radius)
             {
